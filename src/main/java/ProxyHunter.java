@@ -2,8 +2,17 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
+import java.net.ProtocolException;
 import java.net.URL;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.sql.*;
+
+import static com.sun.org.apache.xalan.internal.lib.ExsltStrings.split;
 
 public class ProxyHunter {
     /**
@@ -30,15 +39,15 @@ public class ProxyHunter {
         int cursor = 0;
         HttpURLConnection urlconn = null;
         int n = 1;
-        while (n <= 50)
+        while (n <= 100)
         {
             if (n < 10)
             {
-                connection = new URL("www.samair.ru/proxy/ip-address-0"; +n+".htm");
+                connection = new URL("www.samair.ru/proxy/ip-address-0" + n + ".htm");
             }
             else
             {
-                connection = new URL("www.samair.ru/proxy/ip-address-";+n+".htm");
+                connection = new URL("www.samair.ru/proxy/ip-address-" + n + ".htm");
             }
 
             System.out.println("Starting page: "+Integer.toString(n));
@@ -55,7 +64,9 @@ public class ProxyHunter {
                 text += line;
             }
             //парсим текст страницы
-            replacements = text.substring(text.indexOf("<script src=\"http://samair.ru:81/js/m.js" type="text/javascript">) + "<script src=\"http://samair.ru:81/js/m.js" type="text/javascript">.length(), text.indexOf("</script></head>")).split(";");
+            replacements = text.substring(text.indexOf("<script src=\"http://samair.ru:81/js/m.js"
+                    type = "text/javascript">) + "<script src=\"http://samair.ru:81/js/m.js"
+                    type = "text/javascript">.length(), text.indexOf("</script></head>")).split(";");
             //на самаире, возможно, в целях защиты от парсеров порты в списке выводятся javascript'ом
             //в начале страницы рандомом задаются 10 переменных для каждой цыфры, затем они скриптом же и выводятся в таблицу
             //replacements - как раз массив этих переменных
@@ -63,14 +74,28 @@ public class ProxyHunter {
             while (cursor != -1)
             {
                 cursor += "<tr><td>".length();
-                host = text.substring(cursor, text.indexOf("<script type=\"text/javascript\">", cursor));
                 //host - адрес прокси сервера
-                port = text.substring(text.indexOf(">document.write(\":\"+", cursor) + ">document.write(\":\"+".length(), text.indexOf(")</script>" , cursor));
-                port = removeChar(port, '+');
-                for (int i = 0; i<10; i++)
+                //каким-то непонятным китайским рандомом у самаира порт проксей выводится либо javascript'ом
+                //либо plaintext'ом
+                //обрабатываем
+                if (text.indexOf(">document.write(\":\"+", cursor) != -1)
                 {
-                    port = port.replaceAll(replacements[i].split("=")[0], replacements[i].split("=")[1]);
-                    //подставляем вместо букв циферки
+                    //это для javascript
+                    host = text.substring(cursor, text.indexOf("<script type=\"text/javascript\">", cursor));
+                    port = text.substring(text.indexOf(">document.write(\":\"+", cursor) +
+                            ">document.write(\":\"+".length(), text.indexOf(")</script>" , cursor));
+                    port = removeChar(port, '+');
+                    for (int i = 0; i<10; i++)
+                    {
+                        port = port.replaceAll(replacements[i].split("=")[0], replacements[i].split("=")[1]);
+                        //подставляем вместо букв циферки
+                    }
+                }
+                else
+                {
+                    //это plaintext
+                    host = text.substring(cursor, text.indexOf(":", cursor));
+                    port = text.substring(text.indexOf(":", cursor) + 1, text.indexOf("</td><td>", cursor));
                 }
                 //port - порт сервера
                 cursor = text.indexOf("</td><td>", cursor) + "</td><td>".length();
@@ -79,10 +104,12 @@ public class ProxyHunter {
                 cursor = text.indexOf("</td><td>", cursor) + "</td><td>".length();
                 country = text.substring(cursor, text.indexOf("</td></tr>", cursor));
                 //получаем остальную лабуду - тип сервера и страна, не пропадать же траффику зря) хотя они и вряд ли понадобятся
-                ResultSet rs = st.executeQuery("select host, port from proxies where host = '"+host+"' and port = '"+port+"'");
+                ResultSet rs = st.executeQuery("select host, port from proxies where host = '"+host+"' " +
+                        "and port = '"+port+"'");
                 if (!rs.next())
                 {
-                    st.executeUpdate("INSERT INTO proxies (host, port, anon_level, country) VALUES ('"+host+"', '"+port+"', '"+anon_level+"', '"+country+"')");
+                    st.executeUpdate("INSERT INTO proxies (host, port, anon_level, country) VALUES " +
+                            "('"+host+"', '"+port+"', '"+anon_level+"', '"+country+"')");
                     System.out.println("Added: "+host+":"+port);
                     //Если такого хоста и порта в базе еще нету, то вносим его туда
                 }
@@ -96,4 +123,13 @@ public class ProxyHunter {
         st.close();
         conn.close();
     }
+
+    public static String removeChar(String s, char c) {
+        String r = "";
+        for (int i = 0; i < s.length(); i ++) {
+            if (s.charAt(i) != c) r += s.charAt(i);
+        }
+        return r;
+    }
+
 }
